@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
-
+from scipy import optimize
 
 def MainProcess(Network,N,z,F,Strategy):
 
@@ -11,6 +11,52 @@ def MainProcess(Network,N,z,F,Strategy):
 
     if Strategy == "Targetted":
         Network[-int(N*z):] = F * Network[updating_index]
+
+    if Strategy == "MeanDynamic":
+        
+        mean_nonzealots = np.mean(Network[:int(N*(1-z))])
+        """
+        #WHat fitness is it suggested we're at?
+        #Develop new fitness
+        F = min((1-z) * (1-mean_nonzealots) / (mean_nonzealots*z) + 0.01,1)
+        """
+        Network[-int(N*z):] = F* mean_nonzealots
+
+
+
+    if Strategy == 'LinIncreaseMean':
+        mean_nonzealots = np.mean(Network[:int(N*(1-z))])
+        Network[-int(N*z):] = np.linspace(F*mean_nonzealots,1,int(N*z))
+
+    if Strategy == 'SuperExIncreaseMean':
+        mean_nonzealots = np.mean(Network[:int(N*(1-z))])
+
+        x = np.linspace(0,1,int(N*z))
+        #myarray[-int(N*z):] = F*a*np.exp(np.log(1/(F*a))*x**4)
+
+        Network[-int(N*z):] = mean_nonzealots*F * np.exp(np.log((1-z)/(F*mean_nonzealots))*x**6)
+
+
+    if Strategy in ["MeanMin","MeanTriangleMin"]:
+        mean_nonzealots_1 = np.mean(Network[:int(N*(1-z))])
+
+    if Strategy == "MeanTriangle":
+        trianglehalfwidth = 0.1
+        mean_nonzealots = np.mean(Network[:int(N*(1-z))])
+
+        def triangular_distribution(n,F,w):
+            #Uniform spaced values in (0,1) for deterministic approach
+            u = np.linspace(0,1,n)
+
+            #Inverse CDF of the triangular dust
+            x = np.where(u < 0.5, F-w + np.sqrt(2 * w**2 * u), F + w - np.sqrt(2*w**2*(1-u)))
+
+            x[x<0] = 0
+            x[x>1] = 1
+
+            return x
+
+        Network[-int(N*z):] = triangular_distribution(int(z*N),F*mean_nonzealots,trianglehalfwidth)
 
     # Choose an index with probability proportional to the values
     selected_index = np.random.choice(len(Network), p=Network / Network.sum())
@@ -23,11 +69,40 @@ def MainProcess(Network,N,z,F,Strategy):
         mean_nonzealots = np.mean(Network[:int(N*(1-z))])
         Network[-int(N*z):] = F* mean_nonzealots #*min(Network[:int(N*(1-z))])
 
+    if Strategy == "Median":
+        median_nonzealots = np.median(Network[:int(N*(1-z))])
+
     if Strategy =='Max':
         Network[-int(N*z):] = F*max(Network[:int(N*(1-z))])
 
     if Strategy == 'Min':
         Network[-int(N*z):] = F*min(Network[:int(N*(1-z))])
+
+
+    if Strategy == "MeanMin":
+        mean_nonzealots_2 = np.mean(Network[:int(N*(1-z))])
+
+        if mean_nonzealots_2 < mean_nonzealots_1:
+            Network[-int(N*z):] = F* mean_nonzealots_2
+        
+
+    if Strategy == "MeanTriangleMin":
+        trianglehalfwidth = 0.05
+        mean_nonzealots = np.mean(Network[:int(N*(1-z))])
+
+        def triangular_distribution(n,F,w):
+            #Uniform spaced values in (0,1) for deterministic approach
+            u = np.linspace(0,1,n)
+
+            #Inverse CDF of the triangular dust
+            x = np.where(u < 0.5, F-w + np.sqrt(2 * w**2 * u), F + w - np.sqrt(2*w**2*(1-u)))
+
+            x[x<0] = 0
+            x[x>1] = 1
+
+            return x
+
+        Network[-int(N*z):] = triangular_distribution(int(z*N),F*min(mean_nonzealots_1,mean_nonzealots),trianglehalfwidth)
 
 
     return Network
@@ -44,33 +119,115 @@ def GetStats(Network,N,z,F):
 
 
 
-def Init(N,z,F):
+def Init(N,z,F,Strategy = "Const",trianglehalfwidth = 0.1,InitDict={}):
     #Network
     Network = np.ones(N)
 
     #Set zealots
     Network[-int(N*z):] = F
 
+
+    if Strategy == "ConstTriangle":
+        def triangular_distribution(n,F,w):
+            #Uniform spaced values in (0,1) for deterministic approach
+            u = np.linspace(0,1,n)
+
+            #Inverse CDF of the triangular dust
+            x = np.where(u < 0.5, F-w + np.sqrt(2 * w**2 * u), F + w - np.sqrt(2*w**2*(1-u)))
+
+            x[x<0] = 0
+            x[x>1] = 1
+
+            return x
+
+        Network[-int(N*z):] = triangular_distribution(int(z*N),F,trianglehalfwidth)
+
+
+    if Strategy == "BiModal":
+        z1 = InitDict["z1"]
+        F1 = InitDict["F1"]
+        F2 = InitDict["F2"]
+        p1 = InitDict["p1"]
+        p2 = InitDict["p2"]
+
+
+        Network[-int(N*z):] = F1
+        Network[-int(N*(z-z1)):] = F2
+
+        Network[:int(N*(p1+p2))] = F2
+        Network[:int(N*(p1))] = F1
+
+
     return Network
 
 
-def Evolve(N,z,F,T,Strategy):
+def Evolve(N,z,F,T,Strategy,Network = "FALSE",CheckTimeNum = 10,DistEvolution=False):
 
     Stats = []
 
-    Network = Init(N,z,F)
+    if Network == "FALSE":
+        Network = Init(N,z,F)
 
-    checktimes = np.arange(0,T,T/10)
+    checktimes = np.arange(0,T,T/CheckTimeNum)
+
+    if DistEvolution:
+        # Define bin edges based on min/max opinions over all time steps
+        num_bins = 1000
+        opinion_min, opinion_max = 0, 1.1
+        bin_edges = np.linspace(opinion_min, opinion_max, num_bins + 1)
+
+        distribution_over_time = np.zeros((len(checktimes), num_bins))
+
+
+    #Main Process
+    checktimecounter = 0
     for t in np.arange(T):
         
         if t in checktimes:
             print(t)
-    
+            if DistEvolution:
+                #counts, _ = np.histogram(Network, bins=bin_edges)  # Bin the opinions at time t
+                counts_nozealots,_ = np.histogram(Network[:int(N*(1-z))],bins=bin_edges)
+                distribution_over_time[checktimecounter] = counts_nozealots
+                checktimecounter += 1
+
+        if Strategy == "MeanDynamic":
+            def a(F):
+                return (1+2*F*z-F-z) / (1- (1-F)*z)
+
+
+            def b(F):
+                return (F*z*(1-z)) / (1-(1-F)*z)
+
+
+            def M(F,t):
+                return (b(F) * (1-np.exp(-a(F)*t)) + a(F)*(z-1)) / (F*b(F) * (1-np.exp(-a(F)*t)) + a(F)*(z-1))
+
+            F = optimize.minimize(M,x0=0.5,args=(t/(N*(1-z))),bounds=[(0,1)]).x[0]
+
         Network = MainProcess(Network,N,z,F,Strategy)
 
         Stats.append(GetStats(Network,N,z,F))
 
+    if DistEvolution:
+        return (np.asarray(Stats),distribution_over_time,bin_edges)
+
     return np.asarray(Stats)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -157,6 +314,7 @@ Strategy="Mean"
 """
 Strategies:
     Mean: Zealots adopt the mean of their neighbours * F
+    MeanDynamic: Same as above, but F increases when the expcted mean is achieved
     Max: Zealots adopt the max of the neighbours * F
     Min: Zealots adopt the min of the neighbours * F
     Const: Zealots remain at F

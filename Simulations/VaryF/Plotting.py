@@ -69,6 +69,7 @@ for i in dirlist:
     if Strategy == "Mean":
         theory_mean = (1-z) / (1 - (1-F)*z)
 
+
     elif Strategy == "Const":
         theory_mean = F
 
@@ -82,6 +83,16 @@ for i in dirlist:
         plt.plot(x,Stats[j][:,0],alpha = 0.5,color='k')
 
     plt.plot(x,MeanStats[:,0])
+
+    if Strategy == "Mean" or "Median":
+        #Theory plot
+        alpha = (-2*F*z + F + z -1) / (1+(F-1)*z)
+        d = F*z*(z-1) / ((F-1)*z + 1)
+        p = d * (1- np.exp(alpha * x)) / alpha
+        Mean = (1-p-z) /(1-z-F*p)
+
+        plt.plot(x,Mean,alpha=0.7,linestyle='dashed')
+
 
     plt.plot(x,np.ones(len(x))*theory_mean,linestyle='dashed')
 
@@ -106,7 +117,21 @@ norm = mcolors.Normalize(vmin=min(Flist),vmax=max(Flist))
 fig,ax = plt.subplots()
 for i in range(len(Flist)):
     F = Flist[i]
-    plt.plot(x,MeanList[i],color=cmap(norm(F)))#,label=f'F={F:.2f}')
+    plt.plot(x,MeanList[i],color=cmap(norm(F)),alpha = 0.5)#,label=f'F={F:.2f}')
+
+
+    #Theory plot
+    alpha = (-2*F*z + F + z -1) / (1+(F-1)*z)
+    d = F*z*(z-1) / ((F-1)*z + 1)
+    p = d * (1- np.exp(alpha * x)) / alpha
+    Mean = (1-p-z) /(1-z-F*p)
+
+    plt.semilogy(x,Mean,color='k',alpha=0.7,linestyle='dashed')
+
+    #Theory
+    if Strategy == "Mean" or Strategy == "Median":
+        theory_mean = (1-z) / (1 - (1-F)*z)
+        plt.plot(x,np.ones(len(x))*theory_mean,color=cmap(norm(F)),alpha=0.2,linestyle='dashed')
 
 #Colorbar
 sm = cm.ScalarMappable(cmap=cmap,norm=norm)
@@ -118,6 +143,10 @@ cbar.set_ticklabels([f"{F:.2f}" for F in Flist])
 
 ax.set_xlabel("Time")
 ax.set_ylabel("Mean Opinion")
+#plt.xscale("log")
+plt.yscale("log")
+#plt.ylim(0.98,1)
+
 plt.savefig(str(args.directory) + "/Fig.png")
 
 
